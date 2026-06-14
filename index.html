@@ -369,6 +369,8 @@
   .sol-column .sol-mini:not(:first-child){
     margin-top: -50px;
   }
+
+  .memory-table{
     position:relative; z-index:1;
     flex:1;
     display:flex;
@@ -390,6 +392,50 @@
     opacity:0.45;
   }
   .memory-grid .card.matched{ cursor:default; }
+
+  .mem-cell{
+    aspect-ratio: 5/7;
+    border-radius: 10px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+    -webkit-user-select: none;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.35);
+    transition: transform 0.1s;
+  }
+  .mem-cell:active{ transform: scale(0.95); }
+  .mem-cell.mem-facedown{
+    background: repeating-linear-gradient(135deg, var(--felt-1) 0px, var(--felt-1) 8px, var(--felt-2) 8px, var(--felt-2) 16px);
+    border: 2px solid var(--gold);
+  }
+  body.deck-wild .mem-cell.mem-facedown{
+    background: repeating-linear-gradient(135deg, #3a1c5c 0px, #3a1c5c 8px, #1c0d33 8px, #1c0d33 16px);
+    border: 2px solid #c98bf0;
+  }
+  .mem-cell.mem-faceup{ background: var(--card-face); border: 2px solid var(--gold); }
+  .mem-cell.mem-matched{ background: var(--card-face); border: 2px solid var(--gold); opacity: 0.4; cursor: default; }
+  .mem-front{
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    color: var(--ink);
+  }
+  .mem-front.mem-red{ color: var(--red); }
+  .mem-front.mem-wild{ color: #7b2fbf; }
+  .mem-rank{
+    font-family: 'Fraunces', serif;
+    font-weight: 700;
+    font-size: clamp(13px, 4vw, 20px);
+    line-height: 1;
+  }
+  .mem-suit{
+    font-size: clamp(16px, 5vw, 26px);
+    line-height: 1;
+  }
 
   .war-cross{
     display:grid;
@@ -610,6 +656,7 @@
   <div class="controls">
     <button class="flip-btn" id="flipBtn">Flip</button>
     <button class="flip-btn" id="askBtn" style="display:none;" disabled>Tap a card to ask for it</button>
+    <button class="new-game-btn" id="solUndoBtn" style="display:none;">Undo</button>
     <button class="new-game-btn" id="newGameBtn">New Game</button>
   </div>
 
@@ -734,6 +781,7 @@
   var memMatches = { player: 0, cpu: 0 };
   var memTurn = 'player';
   var memPairCount = 8;
+  var memGridCols = 4;
   var memoryView = document.getElementById('memoryView');
   var memoryGrid = document.getElementById('memoryGrid');
   var memorySizeStep = document.getElementById('memorySizeStep');
@@ -746,6 +794,8 @@
   var solFoundations = [];
   var solSelected = null;
   var solMoves = 0;
+  var solHistory = [];
+  var solUndoBtn = document.getElementById('solUndoBtn');
   var solitaireView = document.getElementById('solitaireView');
   var gameStep = document.getElementById('gameStep');
   var deckStep = document.getElementById('deckStep');
@@ -821,6 +871,7 @@
     solitaireView.style.display = 'none';
     flipBtn.style.display = 'none';
     askBtn.style.display = 'none';
+    solUndoBtn.style.display = 'none';
     playerUnitEl.textContent = '';
     cpuUnitEl.textContent = '';
 
@@ -837,6 +888,7 @@
       startMemoryGame();
     } else if (gameMode === 'solitaire'){
       solitaireView.style.display = 'flex';
+      solUndoBtn.style.display = 'block';
       playerUnitEl.textContent = 'placed';
       cpuUnitEl.textContent = 'moves';
       startSolitaireGame();
@@ -1080,12 +1132,14 @@
       var el = makeCardElement(card, true);
       if (canTap && gfSelectedRank === card.rank){ el.classList.add('selected'); }
       if (canTap){
-        el.addEventListener('click', function(rank){
+        tapSafe(el, function(rank){
           return function(){
             if (gfBusy) return;
             gfSelectedRank = (gfSelectedRank === rank) ? null : rank;
-            renderGfHand();
-            updateAskBtn();
+            setTimeout(function(){
+              renderGfHand();
+              updateAskBtn();
+            }, 0);
           };
         }(card.rank));
       } else {
@@ -1303,57 +1357,91 @@
     for (var i = 0; i < ranks.length; i++){
       var rank = ranks[i];
       if (rank === 'WILD'){
-        memDeck.push({ rank: 'WILD', value: 15, suit: '✦', color: 'wild', isWild: true, faceUp: false, matched: false });
-        memDeck.push({ rank: 'WILD', value: 15, suit: '✦', color: 'wild', isWild: true, faceUp: false, matched: false });
+        memDeck.push({ rank:'WILD', suit:'✦', color:'wild', isWild:true, faceUp:false, matched:false });
+        memDeck.push({ rank:'WILD', suit:'✦', color:'wild', isWild:true, faceUp:false, matched:false });
         continue;
       }
       var suitOrder = shuffle(SUITS.slice());
-      var suitA = suitOrder[0];
-      var suitB = suitOrder[1];
-      memDeck.push({ rank: rank, value: RANK_VALUES[rank], suit: suitA.symbol, color: suitA.color, faceUp: false, matched: false });
-      memDeck.push({ rank: rank, value: RANK_VALUES[rank], suit: suitB.symbol, color: suitB.color, faceUp: false, matched: false });
+      memDeck.push({ rank:rank, suit:suitOrder[0].symbol, color:suitOrder[0].color, faceUp:false, matched:false });
+      memDeck.push({ rank:rank, suit:suitOrder[1].symbol, color:suitOrder[1].color, faceUp:false, matched:false });
     }
     shuffle(memDeck);
 
     var cols = 4;
     if (pairs >= 10) cols = 5;
     if (pairs >= 12) cols = 6;
-    memoryGrid.style.gridTemplateColumns = 'repeat(' + cols + ', 1fr)';
-    memoryGrid.style.maxWidth = (cols >= 6 ? 540 : (cols === 5 ? 470 : 420)) + 'px';
+    memGridCols = cols;
 
     memFlipped = [];
     memBusy = false;
     memMoves = 0;
-    memMatches = { player: 0, cpu: 0 };
+    memMatches = { player:0, cpu:0 };
     memTurn = 'player';
-    renderMemory();
+    buildMemoryGrid();
     updateMemScore();
-    if (twoPlayer){
-      setMessage("Simon's turn \u2014 find a matching pair.");
-    } else {
-      setMessage('Tap two cards to find a matching pair.');
-    }
+    setMessage(twoPlayer ? "Simon's turn \u2014 find a matching pair." : 'Tap two cards to find a matching pair.');
   }
 
   function updateMemScore(){
     playerCountEl.textContent = memMatches.player;
-    if (twoPlayer){
-      cpuCountEl.textContent = memMatches.cpu;
-    } else {
-      cpuCountEl.textContent = memMoves;
+    cpuCountEl.textContent = twoPlayer ? memMatches.cpu : memMoves;
+  }
+
+  var memGridClickHandler = null;
+
+  function buildMemoryGrid(){
+    memoryGrid.style.gridTemplateColumns = 'repeat(' + memGridCols + ', 1fr)';
+    memoryGrid.style.maxWidth = (memGridCols >= 6 ? 540 : (memGridCols === 5 ? 470 : 420)) + 'px';
+    memoryGrid.innerHTML = '';
+
+    if (memGridClickHandler){
+      memoryGrid.removeEventListener('click', memGridClickHandler);
+    }
+    memGridClickHandler = function(e){
+      var t = e.target;
+      while (t && t !== memoryGrid){
+        if (t.getAttribute && t.getAttribute('data-idx') !== null){
+          memCardClick(parseInt(t.getAttribute('data-idx'), 10));
+          return;
+        }
+        t = t.parentNode;
+      }
+    };
+    memoryGrid.addEventListener('click', memGridClickHandler);
+
+    for (var i = 0; i < memDeck.length; i++){
+      var cell = document.createElement('div');
+      cell.className = 'mem-cell mem-facedown';
+      cell.setAttribute('data-idx', i);
+      memoryGrid.appendChild(cell);
     }
   }
 
-  function renderMemory(){
-    memoryGrid.innerHTML = '';
-    for (var i = 0; i < memDeck.length; i++){
-      var card = memDeck[i];
-      var el = makeCardElement(card, card.faceUp || card.matched);
-      if (card.matched){ el.classList.add('matched'); }
-      el.addEventListener('click', function(idx){
-        return function(){ memCardClick(idx); };
-      }(i));
-      memoryGrid.appendChild(el);
+  function updateMemCell(cell, idx){
+    var card = memDeck[idx];
+    cell.setAttribute('data-idx', idx);
+    cell.innerHTML = '';
+    if (card.matched){
+      cell.className = 'mem-cell mem-matched';
+      var inner = document.createElement('div');
+      inner.className = 'mem-front' + (card.color === 'red' ? ' mem-red' : card.isWild ? ' mem-wild' : '');
+      inner.innerHTML = '<span>' + card.rank + '</span><br><span>' + card.suit + '</span>';
+      cell.appendChild(inner);
+    } else if (card.faceUp){
+      cell.className = 'mem-cell mem-faceup';
+      var inner2 = document.createElement('div');
+      inner2.className = 'mem-front' + (card.color === 'red' ? ' mem-red' : card.isWild ? ' mem-wild' : '');
+      inner2.innerHTML = '<span>' + card.rank + '</span><br><span>' + card.suit + '</span>';
+      cell.appendChild(inner2);
+    } else {
+      cell.className = 'mem-cell mem-facedown';
+    }
+  }
+
+  function refreshMemGrid(){
+    var cells = memoryGrid.querySelectorAll('[data-idx]');
+    for (var i = 0; i < cells.length; i++){
+      updateMemCell(cells[i], parseInt(cells[i].getAttribute('data-idx'), 10));
     }
   }
 
@@ -1371,25 +1459,25 @@
     if (card.matched) return;
 
     if (card.faceUp){
-      // tapping the only face-up card puts it back down so you can pick again
       if (countFaceUpUnmatched() === 1){
         card.faceUp = false;
         memFlipped = [];
-        renderMemory();
+        refreshMemGrid();
       }
       return;
     }
-    if (memFlipped.indexOf(idx) !== -1) return;
 
     card.faceUp = true;
     memFlipped.push(idx);
-    renderMemory();
+    refreshMemGrid();
 
     if (memFlipped.length < 2) return;
 
     memBusy = true;
-    var a = memDeck[memFlipped[0]];
-    var b = memDeck[memFlipped[1]];
+    var aIdx = memFlipped[0];
+    var bIdx = memFlipped[1];
+    var a = memDeck[aIdx];
+    var b = memDeck[bIdx];
     var isMatch = (a.rank === b.rank);
 
     setTimeout(function(){
@@ -1400,27 +1488,17 @@
         memMatches[memTurn] += 1;
         memFlipped = [];
         memBusy = false;
+        refreshMemGrid();
         updateMemScore();
-        renderMemory();
-
-        if (memAllMatched()){
-          memEndGame();
-          return;
-        }
-
-        if (twoPlayer){
-          setMessage(gfSideName(memTurn) + ' found a pair! Go again.');
-        } else {
-          setMessage('Match! Go again.');
-        }
+        if (memAllMatched()){ memEndGame(); return; }
+        setMessage(twoPlayer ? (gfSideName(memTurn) + ' found a pair! Go again.') : 'Match! Go again.');
       } else {
         a.faceUp = false;
         b.faceUp = false;
         memFlipped = [];
         memBusy = false;
+        refreshMemGrid();
         updateMemScore();
-        renderMemory();
-
         if (twoPlayer){
           memTurn = memTurn === 'player' ? 'cpu' : 'player';
           setMessage('No match. ' + gfSideName(memTurn) + "'s turn.");
@@ -1428,7 +1506,7 @@
           setMessage('No match. Try again.');
         }
       }
-    }, 850);
+    }, 900);
   }
 
   function memAllMatched(){
@@ -1488,6 +1566,8 @@
     solWaste = [];
     solSelected = null;
     solMoves = 0;
+    solHistory = [];
+    tapCooldown = false;
 
     solFoundations = [];
     for (var s = 0; s < SUITS.length; s++){
@@ -1550,7 +1630,38 @@
     return null;
   }
 
+  function solSnapshot(){
+    return JSON.stringify({
+      stock: solStock,
+      waste: solWaste,
+      tableau: solTableau,
+      foundations: solFoundations,
+      moves: solMoves
+    });
+  }
+
+  function solPushHistory(){
+    solHistory.push(solSnapshot());
+    if (solHistory.length > 200){ solHistory.shift(); }
+  }
+
+  function solUndo(){
+    if (solHistory.length === 0) return;
+    var snap = JSON.parse(solHistory.pop());
+    solStock = snap.stock;
+    solWaste = snap.waste;
+    solTableau = snap.tableau;
+    solFoundations = snap.foundations;
+    solMoves = snap.moves;
+    solSelected = null;
+    renderSolitaire();
+    setMessage('Move undone. Tap a card, then tap where to move it.');
+  }
+
+  solUndoBtn.addEventListener('click', solUndo);
+
   function solMoveSelectedTo(target){
+    solPushHistory();
     var card = solRemoveSelected();
     if (target.type === 'tableau'){
       solTableau[target.col].push(card);
@@ -1582,6 +1693,8 @@
   }
 
   function onStockClick(){
+    if (solStock.length === 0 && solWaste.length === 0) return;
+    solPushHistory();
     if (solStock.length > 0){
       var card = solStock.pop();
       card.faceUp = true;
@@ -1681,6 +1794,10 @@
   }
 
   function renderSolitaire(){
+    setTimeout(renderSolitaireNow, 0);
+  }
+
+  function renderSolitaireNow(){
     var stockArea = document.getElementById('solStockArea');
     var wasteArea = document.getElementById('solWasteArea');
     var fArea = document.getElementById('solFoundationsArea');
@@ -1689,12 +1806,12 @@
     stockArea.innerHTML = '';
     if (solStock.length > 0){
       var sEl = makeMini({ rank: '', suit: '', color: 'black' }, false);
-      sEl.addEventListener('click', onStockClick);
+      tapSafe(sEl, onStockClick);
       stockArea.appendChild(sEl);
     } else {
       var sSlot = document.createElement('div');
       sSlot.className = 'sol-empty-slot';
-      sSlot.addEventListener('click', onStockClick);
+      tapSafe(sSlot, onStockClick);
       stockArea.appendChild(sSlot);
     }
 
@@ -1703,7 +1820,7 @@
       var top = solWaste[solWaste.length - 1];
       var wEl = makeMini(top, true);
       if (solSelected && solSelected.from === 'waste'){ wEl.classList.add('selected'); }
-      wEl.addEventListener('click', onWasteClick);
+      tapSafe(wEl, onWasteClick);
       wasteArea.appendChild(wEl);
     } else {
       var wSlot = document.createElement('div');
@@ -1724,7 +1841,7 @@
       if (solSelected && solSelected.from === 'foundation' && solSelected.idx === f){
         fEl.classList.add('selected');
       }
-      fEl.addEventListener('click', function(idx){
+      tapSafe(fEl, function(idx){
         return function(){ onFoundationClick(idx); };
       }(f));
       fArea.appendChild(fEl);
@@ -1738,7 +1855,7 @@
       if (colCards.length === 0){
         var empty = document.createElement('div');
         empty.className = 'sol-empty-slot';
-        empty.addEventListener('click', function(c){
+        tapSafe(empty, function(c){
           return function(){ onTableauColumnClick(c); };
         }(col));
         colEl.appendChild(empty);
@@ -1750,7 +1867,7 @@
               solSelected.from === 'tableau' && solSelected.col === col){
             cEl.classList.add('selected');
           }
-          cEl.addEventListener('click', function(c, idx){
+          tapSafe(cEl, function(c, idx){
             return function(){ onTableauCardClick(c, idx); };
           }(col, i));
           colEl.appendChild(cEl);
