@@ -592,7 +592,7 @@
 
   <div class="scoreboard">
     <div class="score-block">
-      <div class="score-label">Simon</div>
+      <div class="score-label" id="playerLabel">Player 1</div>
       <div class="score-num" id="playerCount">26</div>
       <div class="score-unit" id="playerUnit"></div>
     </div>
@@ -616,7 +616,7 @@
 
     <div class="zone">
       <div class="pile" id="playerPile"></div>
-      <div class="zone-label">Simon</div>
+      <div class="zone-label" id="playerZoneLabel">Player 1</div>
     </div>
   </div>
 
@@ -669,6 +669,10 @@
   <div class="overlay show" id="startScreen">
     <div id="gameStep">
       <h1>Card Clash</h1>
+      <div style="width:100%; max-width:280px; margin-bottom:14px;">
+        <label style="font-size:12px; letter-spacing:2px; text-transform:uppercase; color:var(--gold); opacity:0.8; display:block; margin-bottom:6px;">Your Name</label>
+        <input id="playerNameInput" type="text" maxlength="20" placeholder="Enter your name" style="width:100%; padding:12px 14px; border-radius:12px; border:1px solid var(--line); background:rgba(255,255,255,0.07); color:var(--gold-bright); font-size:16px; font-family:'Outfit',sans-serif; outline:none; box-sizing:border-box;">
+      </div>
       <p>Choose how you want to play.</p>
       <div style="display:flex; flex-direction:column; gap:12px; width:100%; max-width:280px; margin-top:6px;">
         <button class="flip-btn game-choice-btn" data-game="war" style="padding:14px 24px;">War <span style="font-weight:400; font-size:0.6em; display:block; opacity:0.7;">highest card wins, ties mean WAR</span></button>
@@ -699,11 +703,11 @@
       <button class="new-game-btn" id="backToGameBtn2" style="margin-top:14px;">&larr; Change game</button>
     </div>
     <div id="playersStep" style="display:none;">
-      <h1 id="playersTitle">Bicycle</h1>
-      <p id="playersSubtitle">How many players?</p>
-      <div style="display:flex; flex-direction:column; gap:12px; width:100%; max-width:280px; margin-top:6px;">
-        <button class="flip-btn" id="onePlayerBtn" style="padding:14px 24px;">1 Player <span style="font-weight:400; font-size:0.6em; display:block; opacity:0.7;">vs the House</span></button>
-        <button class="flip-btn" id="twoPlayerBtn" style="padding:14px 24px;">2 Players <span style="font-weight:400; font-size:0.6em; display:block; opacity:0.7;">pass and play</span></button>
+      <h1 id="playersTitle">How Many Players?</h1>
+      <div id="playerCountBtns" style="display:flex; flex-direction:column; gap:10px; width:100%; max-width:280px; margin-top:6px;"></div>
+      <div id="playerNamesForm" style="display:none; flex-direction:column; gap:10px; width:100%; max-width:280px; margin-top:12px;">
+        <div id="playerNameFields"></div>
+        <button class="flip-btn" id="startWithNamesBtn" style="padding:14px 24px; margin-top:4px;">Start Game</button>
       </div>
       <button class="new-game-btn" id="backToDeckBtn" style="margin-top:14px;">&larr; Back</button>
     </div>
@@ -734,12 +738,19 @@
   var deckType = 'bicycle';
   var gameMode = 'war';
   var opponentName = 'the House';
+  var playerName = 'Player 1';
+  var playerNames = ['Player 1'];
+  var numPlayers = 1;
 
   // Go Fish state
   var gfDeck = [];
   var gfHands = { player: [], cpu: [] };
   var gfBooks = { player: 0, cpu: 0 };
   var gfTurn = 'player';
+  // Multi-player Go Fish state (used when numPlayers > 1)
+  var gfAllHands = [];
+  var gfAllBooks = [];
+  var gfCurrentPlayer = 0;
   var gfSelectedRank = null;
   var gfBusy = false;
 
@@ -750,6 +761,8 @@
   var cpuLabelEl = document.getElementById('cpuLabel');
   var cpuZoneLabelEl = document.getElementById('cpuZoneLabel');
   var brandSubtitleEl = document.getElementById('brandSubtitle');
+  var playerLabelEl = document.getElementById('playerLabel');
+  var playerZoneLabelEl = document.getElementById('playerZoneLabel');
   var vsCardsEl = document.getElementById('vsCards');
   var bannerEl = document.getElementById('banner');
   var messageEl = document.getElementById('message');
@@ -779,7 +792,7 @@
   var memBusy = false;
   var memMoves = 0;
   var memMatches = { player: 0, cpu: 0 };
-  var memTurn = 'player';
+  var memTurn = 0; // player index
   var memPairCount = 8;
   var memGridCols = 4;
   var memoryView = document.getElementById('memoryView');
@@ -798,15 +811,17 @@
   var solUndoBtn = document.getElementById('solUndoBtn');
   var solitaireView = document.getElementById('solitaireView');
   var gameStep = document.getElementById('gameStep');
+  var playerNameInput = document.getElementById('playerNameInput');
   var deckStep = document.getElementById('deckStep');
   var playersStep = document.getElementById('playersStep');
-  var playersTitle = document.getElementById('playersTitle');
+  var playerCountBtns = document.getElementById('playerCountBtns');
+  var playerNamesForm = document.getElementById('playerNamesForm');
+  var playerNameFields = document.getElementById('playerNameFields');
+  var startWithNamesBtn = document.getElementById('startWithNamesBtn');
   var gameChoiceBtns = document.querySelectorAll('.game-choice-btn');
   var deckChoiceBtns = document.querySelectorAll('.deck-choice-btn');
   var backToGameBtn1 = document.getElementById('backToGameBtn1');
   var backToDeckBtn = document.getElementById('backToDeckBtn');
-  var onePlayerBtn = document.getElementById('onePlayerBtn');
-  var twoPlayerBtn = document.getElementById('twoPlayerBtn');
 
   function buildDeck(){
     var deck = [];
@@ -834,23 +849,26 @@
   }
 
   function applyMode(){
-    if (twoPlayer){
-      opponentName = 'Player 2';
+    playerName = playerNames[0];
+    if (numPlayers > 1){
+      twoPlayer = true;
+      opponentName = playerNames.length > 1 ? playerNames[1] : 'Player 2';
     } else {
+      twoPlayer = false;
       opponentName = 'the House';
     }
-    cpuLabelEl.textContent = twoPlayer ? 'Player 2' : 'House';
-    cpuZoneLabelEl.textContent = twoPlayer ? 'Player 2' : 'House';
-    gfCpuZoneLabelEl.textContent = twoPlayer ? "Player 2's Hand" : "House's Hand";
-    gfHandLabelEl.textContent = "Simon's Hand \u2014 tap a card";
+    playerLabelEl.textContent = playerName;
+    playerZoneLabelEl.textContent = playerName;
+    cpuLabelEl.textContent = numPlayers > 1 ? opponentName : 'House';
+    cpuZoneLabelEl.textContent = numPlayers > 1 ? opponentName : 'House';
+    gfCpuZoneLabelEl.textContent = numPlayers > 1 ? (opponentName + "'s Hand") : "House's Hand";
+    gfHandLabelEl.textContent = playerName + "'s Hand \u2014 tap a card";
 
     if (gameMode === 'gofish'){
       brandSubtitleEl.textContent = 'a Go Fish card game';
     } else if (gameMode === 'memory'){
       brandSubtitleEl.textContent = 'a Memory Match card game';
-      if (!twoPlayer){
-        cpuLabelEl.textContent = 'Moves';
-      }
+      if (!twoPlayer){ cpuLabelEl.textContent = 'Moves'; }
     } else if (gameMode === 'solitaire'){
       brandSubtitleEl.textContent = 'a Solitaire card game';
       cpuLabelEl.textContent = 'Moves';
@@ -995,7 +1013,7 @@
     flipBtn.disabled = true;
     var title, text;
     if (playerDeck.length > cpuDeck.length){
-      title = 'Simon Wins!';
+      title = playerName + ' Wins!';
       text = 'All 52 cards are yours. ' + opponentName + (twoPlayer ? ' has' : ' has') + ' nothing left to play.';
     } else if (cpuDeck.length > playerDeck.length){
       title = twoPlayer ? 'Player 2 Wins' : 'House Wins';
@@ -1057,26 +1075,91 @@
 
   function startGoFishGame(){
     gfDeck = shuffle(buildDeck());
-    gfHands.player = gfDeck.splice(0, 7);
-    gfHands.cpu = gfDeck.splice(0, 7);
-    sortHand(gfHands.player);
-    gfBooks = { player: 0, cpu: 0 };
+    gfAllHands = [];
+    gfAllBooks = [];
+    gfCurrentPlayer = 0;
+
+    var cardsEach = numPlayers >= 4 ? 5 : 7;
+    for (var p = 0; p < numPlayers; p++){
+      var hand = gfDeck.splice(0, cardsEach);
+      sortHand(hand);
+      gfAllHands.push(hand);
+      gfAllBooks.push(0);
+    }
+
+    // House hand (only in 1-player mode)
+    if (numPlayers === 1){
+      gfHands.cpu = gfDeck.splice(0, 7);
+      gfHands.player = gfAllHands[0];
+      gfBooks = { player: 0, cpu: 0 };
+      gfTurn = 'player';
+      checkBooks(gfHands.player, 'player');
+      checkBooks(gfHands.cpu, 'cpu');
+    } else {
+      gfHands.player = gfAllHands[0];
+      gfHands.cpu = gfAllHands[1];
+      gfBooks = { player: 0, cpu: 0 };
+      gfTurn = 'player';
+      for (var p2 = 0; p2 < numPlayers; p2++){
+        var booksFound = checkBooksArr(gfAllHands[p2]);
+        gfAllBooks[p2] += booksFound;
+      }
+      gfBooks.player = gfAllBooks[0];
+      gfBooks.cpu = gfAllBooks[1] || 0;
+    }
+
     gfSelectedRank = null;
     gfBusy = false;
-    checkBooks(gfHands.player, 'player');
-    checkBooks(gfHands.cpu, 'cpu');
     updateGfCounts();
     gfStartTurn('player', true);
   }
 
+  // Returns count of books found and removes them from hand
+  function checkBooksArr(hand){
+    var counts = {};
+    for (var i = 0; i < hand.length; i++){
+      var rk = hand[i].rank;
+      counts[rk] = (counts[rk] || 0) + 1;
+    }
+    var found = 0;
+    for (var rank in counts){
+      if (counts[rank] === 4){
+        found++;
+        for (var j = hand.length - 1; j >= 0; j--){
+          if (hand[j].rank === rank){ hand.splice(j, 1); }
+        }
+      }
+    }
+    return found;
+  }
+
+  function gfPlayerName(idx){
+    if (idx === undefined) idx = gfCurrentPlayer;
+    return playerNames[idx] || ('Player ' + (idx + 1));
+  }
+
   function updateGfCounts(){
-    playerCountEl.textContent = gfBooks.player;
-    cpuCountEl.textContent = gfBooks.cpu;
+    if (numPlayers === 1){
+      playerCountEl.textContent = gfBooks.player;
+      cpuCountEl.textContent = gfBooks.cpu;
+    } else {
+      // Show current player's books vs total books in play
+      playerCountEl.textContent = gfAllBooks[gfCurrentPlayer] || 0;
+      cpuCountEl.textContent = gfAllBooks.reduce(function(a,b){ return a+b; }, 0);
+      playerLabelEl.textContent = gfPlayerName(gfCurrentPlayer);
+      cpuLabelEl.textContent = 'Total Books';
+    }
     gfDeckCountEl.textContent = gfDeck.length;
   }
 
   function gfSideName(side){
-    return side === 'player' ? 'Simon' : opponentName;
+    if (numPlayers > 1){
+      if (side === 'player') return gfPlayerName(gfCurrentPlayer);
+      // In multi-player, 'cpu' side is the next player
+      var nextIdx = (gfCurrentPlayer + 1) % numPlayers;
+      return gfPlayerName(nextIdx);
+    }
+    return side === 'player' ? playerName : opponentName;
   }
 
   // In 1-player mode the active hand is always Simon's (cpu is hidden info-wise
@@ -1183,47 +1266,88 @@
     }
   }
 
+  function gfRefillMulti(idx){
+    var hand = gfAllHands[idx];
+    if (hand.length === 0 && gfDeck.length > 0){
+      var draw = Math.min(5, gfDeck.length);
+      for (var i = 0; i < draw; i++){ hand.push(gfDeck.shift()); }
+      sortHand(hand);
+      var found = checkBooksArr(hand);
+      gfAllBooks[idx] += found;
+    }
+  }
+
   function gfCheckGameOver(){
-    if (gfDeck.length === 0 && gfHands.player.length === 0 && gfHands.cpu.length === 0){
-      gfEndGame();
-      return true;
+    if (numPlayers === 1){
+      if (gfDeck.length === 0 && gfHands.player.length === 0 && gfHands.cpu.length === 0){
+        gfEndGame(); return true;
+      }
+      if (gfBooks.player + gfBooks.cpu >= 13){ gfEndGame(); return true; }
+      return false;
     }
-    if (gfBooks.player + gfBooks.cpu >= 13){
-      gfEndGame();
-      return true;
+    var allEmpty = gfDeck.length === 0;
+    if (allEmpty){
+      for (var i = 0; i < numPlayers; i++){
+        if (gfAllHands[i].length > 0){ allEmpty = false; break; }
+      }
     }
+    var totalBooks = gfAllBooks.reduce(function(a,b){ return a+b; }, 0);
+    if (allEmpty || totalBooks >= 13){ gfEndGame(); return true; }
     return false;
   }
 
   function gfEndGame(){
     askBtn.disabled = true;
     var title, text;
-    if (gfBooks.player > gfBooks.cpu){
-      title = 'Simon Wins!';
-      text = 'Final books: Simon ' + gfBooks.player + ', ' + opponentName + ' ' + gfBooks.cpu + '.';
-    } else if (gfBooks.cpu > gfBooks.player){
-      title = (twoPlayer ? 'Player 2' : 'House') + ' Wins';
-      text = 'Final books: Simon ' + gfBooks.player + ', ' + opponentName + ' ' + gfBooks.cpu + '.';
+    if (numPlayers === 1){
+      if (gfBooks.player > gfBooks.cpu){
+        title = playerName + ' Wins!';
+        text = 'Final books: ' + playerName + ' ' + gfBooks.player + ', ' + opponentName + ' ' + gfBooks.cpu + '.';
+      } else if (gfBooks.cpu > gfBooks.player){
+        title = opponentName + ' Wins';
+        text = 'Final books: ' + playerName + ' ' + gfBooks.player + ', ' + opponentName + ' ' + gfBooks.cpu + '.';
+      } else {
+        title = 'Dead Even';
+        text = 'Both sides collected ' + gfBooks.player + ' books each. Call it a draw.';
+      }
     } else {
-      title = 'Dead Even';
-      text = 'Both sides collected ' + gfBooks.player + ' books each. Call it a draw.';
+      var maxBooks = Math.max.apply(null, gfAllBooks);
+      var winners = [];
+      for (var i = 0; i < numPlayers; i++){
+        if (gfAllBooks[i] === maxBooks){ winners.push(gfPlayerName(i)); }
+      }
+      title = winners.join(' & ') + (winners.length === 1 ? ' Wins!' : ' Tie!');
+      var summary = [];
+      for (var j = 0; j < numPlayers; j++){
+        summary.push(gfPlayerName(j) + ': ' + gfAllBooks[j]);
+      }
+      text = 'Final books — ' + summary.join(', ') + '.';
     }
     overlayTitle.textContent = title;
     overlayText.textContent = text;
     setTimeout(function(){ overlay.classList.add('show'); }, 600);
   }
 
-  // Starts a turn for the given side. If twoPlayer and it's a fresh hand-off,
-  // shows the pass overlay until the player taps "Reveal Hand".
   function gfStartTurn(side, skipPass){
     gfTurn = side;
     gfSelectedRank = null;
-    gfRefillIfEmpty(side);
+
+    if (numPlayers > 1){
+      // In multi-player, sync gfHands to the current player's hand
+      gfHands.player = gfAllHands[gfCurrentPlayer];
+      var nextIdx = (gfCurrentPlayer + 1) % numPlayers;
+      gfHands.cpu = gfAllHands[nextIdx];
+      gfRefillMulti(gfCurrentPlayer);
+    } else {
+      gfRefillIfEmpty(side);
+    }
+
+    updateGfCounts();
 
     if (twoPlayer && !skipPass){
-      var name = gfSideName(side);
+      var name = numPlayers > 1 ? gfPlayerName(gfCurrentPlayer) : gfSideName(side);
       passTitle.textContent = 'Pass to ' + name;
-      passText.textContent = 'Hand the device to ' + name + ', then tap below to reveal ' + name + "'s hand.";
+      passText.textContent = 'Hand the device to ' + name + ', then tap below to reveal their hand.';
       passOverlay.classList.add('show');
       return;
     }
@@ -1234,7 +1358,8 @@
       setMessage(opponentName + ' is thinking\u2026');
       setTimeout(gfCpuTurn, 900);
     } else {
-      setMessage(gfSideName(side) + "'s turn \u2014 tap a card to ask for it.");
+      var turnName = numPlayers > 1 ? gfPlayerName(gfCurrentPlayer) : gfSideName(side);
+      setMessage(turnName + "'s turn \u2014 tap a card to ask for it.");
     }
   }
 
@@ -1250,13 +1375,13 @@
     return ranks;
   }
 
-  // asker / target are 'player' or 'cpu'
   function gfPerformAsk(asker, rank){
     var askerHand = gfHands[asker];
     var targetSide = asker === 'player' ? 'cpu' : 'player';
     var targetHand = gfHands[targetSide];
-    var askerLabel = asker === 'player' ? 'Simon' : opponentName;
-    var targetLabel = targetSide === 'player' ? 'Simon' : opponentName;
+    var askerLabel = numPlayers > 1 ? gfPlayerName(gfCurrentPlayer) : (asker === 'player' ? playerName : opponentName);
+    var nextIdx = (gfCurrentPlayer + 1) % numPlayers;
+    var targetLabel = numPlayers > 1 ? gfPlayerName(nextIdx) : (targetSide === 'player' ? playerName : opponentName);
 
     var matches = [];
     for (var i = targetHand.length - 1; i >= 0; i--){
@@ -1270,6 +1395,7 @@
       for (var m = 0; m < matches.length; m++){ askerHand.push(matches[m]); }
       if (asker === 'player'){ sortHand(askerHand); }
       var booksA = checkBooks(askerHand, asker);
+      if (numPlayers > 1 && booksA.length > 0){ gfAllBooks[gfCurrentPlayer] += booksA.length; }
       var bookMsg = booksA.length > 0 ? ' Book of ' + booksA.join(', ') + '!' : '';
       setMessage(askerLabel + ' asked ' + targetLabel + ' for ' + rank + 's and got ' + matches.length + '. Go again.' + bookMsg);
       updateGfCounts();
@@ -1277,13 +1403,13 @@
       return;
     }
 
-    // Go Fish
     setMessage(targetLabel + ' says "Go Fish!"');
     if (gfDeck.length > 0){
       var drawn = gfDeck.shift();
       askerHand.push(drawn);
       if (asker === 'player'){ sortHand(askerHand); }
       var booksB = checkBooks(askerHand, asker);
+      if (numPlayers > 1 && booksB.length > 0){ gfAllBooks[gfCurrentPlayer] += booksB.length; }
       var bookMsg2 = booksB.length > 0 ? ' Book of ' + booksB.join(', ') + '!' : '';
       var gotMatch = drawn.rank === rank;
       setTimeout(function(){
@@ -1311,8 +1437,13 @@
     if (goAgain){
       gfStartTurn(asker, true);
     } else {
-      var next = asker === 'player' ? 'cpu' : 'player';
-      gfStartTurn(next, false);
+      if (numPlayers > 1){
+        gfCurrentPlayer = (gfCurrentPlayer + 1) % numPlayers;
+        gfStartTurn('player', false);
+      } else {
+        var next = asker === 'player' ? 'cpu' : 'player';
+        gfStartTurn(next, false);
+      }
     }
   }
 
@@ -1343,7 +1474,8 @@
   passRevealBtn.addEventListener('click', function(){
     passOverlay.classList.remove('show');
     renderGoFish();
-    setMessage(gfSideName(gfTurn) + "'s turn \u2014 tap a card to ask for it.");
+    var turnName = numPlayers > 1 ? gfPlayerName(gfCurrentPlayer) : gfSideName(gfTurn);
+    setMessage(turnName + "'s turn \u2014 tap a card to ask for it.");
   });
 
   // ===================== MEMORY MATCH =====================
@@ -1375,16 +1507,39 @@
     memFlipped = [];
     memBusy = false;
     memMoves = 0;
-    memMatches = { player:0, cpu:0 };
-    memTurn = 'player';
+    memMatches = [0, 0];
+    memTurn = 0;
     buildMemoryGrid();
     updateMemScore();
-    setMessage(twoPlayer ? "Simon's turn \u2014 find a matching pair." : 'Tap two cards to find a matching pair.');
+    setMessage(twoPlayer ? playerNames[0] + "'s turn \u2014 find a matching pair." : 'Tap two cards to find a matching pair.');
   }
 
   function updateMemScore(){
-    playerCountEl.textContent = memMatches.player;
-    cpuCountEl.textContent = twoPlayer ? memMatches.cpu : memMoves;
+    playerCountEl.textContent = memMatches[0] || 0;
+    if (twoPlayer){
+      playerLabelEl.textContent = playerNames[memTurn] || ('Player ' + (memTurn + 1));
+      cpuCountEl.textContent = memMatches[1] || 0;
+      cpuLabelEl.textContent = (playerNames[1] || 'Player 2') + ' matches';
+    } else {
+      cpuCountEl.textContent = memMoves;
+    }
+  }
+
+  var tapCooldown = false;
+  function tapSafe(el, fn){
+    el.addEventListener('touchend', function(e){
+      e.preventDefault();
+      if (tapCooldown) return;
+      tapCooldown = true;
+      setTimeout(function(){ tapCooldown = false; }, 350);
+      fn();
+    });
+    el.addEventListener('click', function(){
+      if (tapCooldown) return;
+      tapCooldown = true;
+      setTimeout(function(){ tapCooldown = false; }, 350);
+      fn();
+    });
   }
 
   var memGridClickHandler = null;
@@ -1485,13 +1640,14 @@
       if (isMatch){
         a.matched = true;
         b.matched = true;
-        memMatches[memTurn] += 1;
+        memMatches[memTurn] = (memMatches[memTurn] || 0) + 1;
         memFlipped = [];
         memBusy = false;
         refreshMemGrid();
         updateMemScore();
         if (memAllMatched()){ memEndGame(); return; }
-        setMessage(twoPlayer ? (gfSideName(memTurn) + ' found a pair! Go again.') : 'Match! Go again.');
+        var matchName = playerNames[memTurn] || ('Player ' + (memTurn + 1));
+        setMessage(twoPlayer ? (matchName + ' found a pair! Go again.') : 'Match! Go again.');
       } else {
         a.faceUp = false;
         b.faceUp = false;
@@ -1500,8 +1656,9 @@
         refreshMemGrid();
         updateMemScore();
         if (twoPlayer){
-          memTurn = memTurn === 'player' ? 'cpu' : 'player';
-          setMessage('No match. ' + gfSideName(memTurn) + "'s turn.");
+          memTurn = (memTurn + 1) % 2;
+          var nextName = playerNames[memTurn] || ('Player ' + (memTurn + 1));
+          setMessage('No match. ' + nextName + "'s turn.");
         } else {
           setMessage('No match. Try again.');
         }
@@ -1518,18 +1675,18 @@
 
   function memEndGame(){
     var title, text;
+    var p1 = playerNames[0] || 'Player 1';
+    var p2 = playerNames[1] || 'Player 2';
     if (twoPlayer){
-      if (memMatches.player > memMatches.cpu){
-        title = 'Simon Wins!';
-      } else if (memMatches.cpu > memMatches.player){
-        title = 'Player 2 Wins';
-      } else {
-        title = 'Dead Even';
-      }
-      text = 'Final pairs: Simon ' + memMatches.player + ', Player 2 ' + memMatches.cpu + '.';
+      var s1 = memMatches[0] || 0;
+      var s2 = memMatches[1] || 0;
+      if (s1 > s2){ title = p1 + ' Wins!'; }
+      else if (s2 > s1){ title = p2 + ' Wins!'; }
+      else { title = 'Dead Even'; }
+      text = 'Final pairs: ' + p1 + ' ' + s1 + ', ' + p2 + ' ' + s2 + '.';
     } else {
       title = 'All Matched!';
-      text = 'Simon cleared the board in ' + memMoves + ' move' + (memMoves === 1 ? '' : 's') + '.';
+      text = p1 + ' cleared the board in ' + memMoves + ' move' + (memMoves === 1 ? '' : 's') + '.';
     }
     overlayTitle.textContent = title;
     overlayText.textContent = text;
@@ -1550,7 +1707,13 @@
   }
 
   function startSolitaireGame(){
-    var deck = shuffle(buildDeck());
+    var deck = [];
+    for (var s = 0; s < SUITS.length; s++){
+      for (var r = 0; r < RANKS.length; r++){
+        deck.push({ rank: RANKS[r], value: RANK_VALUES[RANKS[r]], suit: SUITS[s].symbol, color: SUITS[s].color });
+      }
+    }
+    shuffle(deck);
     solTableau = [];
     for (var c = 0; c < 7; c++){
       var col = [];
@@ -1573,9 +1736,6 @@
     for (var s = 0; s < SUITS.length; s++){
       solFoundations.push({ type: 'suit', suit: SUITS[s].symbol, color: SUITS[s].color, cards: [] });
     }
-    if (deckType === 'wild'){
-      solFoundations.push({ type: 'wild', cards: [] });
-    }
 
     renderSolitaire();
     setMessage('Tap the deck to draw. Tap a card, then tap where to move it.');
@@ -1584,9 +1744,10 @@
   function getSolSelectedCard(){
     if (!solSelected) return null;
     if (solSelected.from === 'waste') return solWaste[solWaste.length - 1];
-    if (solSelected.from === 'tableau') {
+    if (solSelected.from === 'tableau'){
       var col = solTableau[solSelected.col];
-      return col[col.length - 1];
+      var fi = solSelected.fromIdx !== undefined ? solSelected.fromIdx : col.length - 1;
+      return col[fi];
     }
     if (solSelected.from === 'foundation'){
       var f = solFoundations[solSelected.idx];
@@ -1609,25 +1770,55 @@
       return card.isWild === true;
     }
     if (card.isWild) return false;
+    if (fnd.cards.length === 0){
+      return solValue(card) === 1;
+    }
     if (card.suit !== fnd.suit) return false;
-    var topVal = fnd.cards.length === 0 ? 0 : solValue(fnd.cards[fnd.cards.length - 1]);
+    var topVal = solValue(fnd.cards[fnd.cards.length - 1]);
     return solValue(card) === topVal + 1;
+  }
+
+  function solMoveSelectedTo(target){
+    solPushHistory();
+    var stack = solRemoveSelected();
+    if (target.type === 'tableau'){
+      for (var i = 0; i < stack.length; i++){
+        solTableau[target.col].push(stack[i]);
+      }
+    } else {
+      var card = stack[0];
+      var fnd = solFoundations[target.idx];
+      if (fnd.cards.length === 0 && !card.isWild){
+        fnd.suit = card.suit;
+        fnd.color = card.color;
+      }
+      fnd.cards.push(card);
+    }
+    solSelected = null;
+    solMoves += 1;
+    renderSolitaire();
+    if (solCheckWin()){
+      solEndGame();
+    } else {
+      setMessage('Tap a card, then tap where to move it.');
+    }
   }
 
   function solRemoveSelected(){
     if (solSelected.from === 'waste'){
-      return solWaste.pop();
+      return [solWaste.pop()];
     }
     if (solSelected.from === 'tableau'){
       var col = solTableau[solSelected.col];
-      var card = col.pop();
+      var fi = solSelected.fromIdx !== undefined ? solSelected.fromIdx : col.length - 1;
+      var stack = col.splice(fi);
       if (col.length > 0){ col[col.length - 1].faceUp = true; }
-      return card;
+      return stack;
     }
     if (solSelected.from === 'foundation'){
-      return solFoundations[solSelected.idx].cards.pop();
+      return [solFoundations[solSelected.idx].cards.pop()];
     }
-    return null;
+    return [];
   }
 
   function solSnapshot(){
@@ -1660,24 +1851,6 @@
 
   solUndoBtn.addEventListener('click', solUndo);
 
-  function solMoveSelectedTo(target){
-    solPushHistory();
-    var card = solRemoveSelected();
-    if (target.type === 'tableau'){
-      solTableau[target.col].push(card);
-    } else {
-      solFoundations[target.idx].cards.push(card);
-    }
-    solSelected = null;
-    solMoves += 1;
-    renderSolitaire();
-    if (solCheckWin()){
-      solEndGame();
-    } else {
-      setMessage('Tap a card, then tap where to move it.');
-    }
-  }
-
   function solCheckWin(){
     if (solStock.length > 0 || solWaste.length > 0) return false;
     for (var c = 0; c < solTableau.length; c++){
@@ -1688,7 +1861,7 @@
 
   function solEndGame(){
     overlayTitle.textContent = 'Solitaire Solved!';
-    overlayText.textContent = 'Simon cleared the board in ' + solMoves + ' move' + (solMoves === 1 ? '' : 's') + '.';
+    overlayText.textContent = playerName + ' cleared the board in ' + solMoves + ' move' + (solMoves === 1 ? '' : 's') + '.';
     setTimeout(function(){ overlay.classList.add('show'); }, 500);
   }
 
@@ -1760,7 +1933,8 @@
     var card = c[idx];
 
     if (solSelected){
-      if (solSelected.from === 'tableau' && solSelected.col === col && isTop){
+      // tapping the same card deselects
+      if (solSelected.from === 'tableau' && solSelected.col === col && solSelected.fromIdx === idx){
         solSelected = null;
         renderSolitaire();
         return;
@@ -1770,8 +1944,9 @@
         solMoveSelectedTo({ type: 'tableau', col: col });
         return;
       }
-      if (isTop && card.faceUp){
-        solSelected = { from: 'tableau', col: col };
+      // re-select a different face-up card
+      if (card.faceUp){
+        solSelected = { from: 'tableau', col: col, fromIdx: idx };
         renderSolitaire();
         return;
       }
@@ -1780,8 +1955,8 @@
       return;
     }
 
-    if (isTop && card.faceUp){
-      solSelected = { from: 'tableau', col: col };
+    if (card.faceUp){
+      solSelected = { from: 'tableau', col: col, fromIdx: idx };
       renderSolitaire();
     }
   }
@@ -1863,8 +2038,9 @@
         for (var i = 0; i < colCards.length; i++){
           var card = colCards[i];
           var cEl = makeMini(card, card.faceUp);
-          if (card.faceUp && i === colCards.length - 1 && solSelected &&
-              solSelected.from === 'tableau' && solSelected.col === col){
+          if (card.faceUp && solSelected &&
+              solSelected.from === 'tableau' && solSelected.col === col &&
+              solSelected.fromIdx !== undefined && i >= solSelected.fromIdx){
             cEl.classList.add('selected');
           }
           tapSafe(cEl, function(c, idx){
@@ -2023,7 +2199,7 @@
     awardPile(winner, pileFromPlayer, pileFromCpu);
     warCount = 0;
 
-    var label = winner === 'player' ? 'Simon' : opponentName;
+    var label = winner === 'player' ? playerName : opponentName;
     var pileSize = pileFromPlayer.length + pileFromCpu.length;
     var prefix = wasWar ? 'War resolved \u2014 ' : '';
     var extraMsg = '';
@@ -2069,8 +2245,92 @@
     playRound([], [], false);
   });
 
+  // Build the player-count buttons for the current game mode
+  function buildPlayerCountBtns(){
+    playerCountBtns.innerHTML = '';
+    playerNamesForm.style.display = 'none';
+
+    var options = [];
+    if (gameMode === 'war' || gameMode === 'memory'){
+      options = [
+        { n: 1, label: '1 Player', sub: gameMode === 'war' ? 'vs the House' : 'solo challenge' },
+        { n: 2, label: '2 Players', sub: 'pass and play' }
+      ];
+    } else if (gameMode === 'gofish'){
+      options = [
+        { n: 1, label: '1 Player', sub: 'vs the House' },
+        { n: 2, label: '2 Players', sub: 'pass and play' },
+        { n: 3, label: '3 Players', sub: 'pass and play' },
+        { n: 4, label: '4 Players', sub: 'pass and play' },
+        { n: 5, label: '5 Players', sub: 'pass and play' }
+      ];
+    } else {
+      // solitaire — already starts straight from deck choice, shouldn't reach here
+      options = [{ n: 1, label: '1 Player', sub: 'solo' }];
+    }
+
+    for (var i = 0; i < options.length; i++){
+      var btn = document.createElement('button');
+      btn.className = 'flip-btn';
+      btn.style.cssText = 'padding:12px 24px;';
+      var opt = options[i];
+      btn.innerHTML = opt.label + '<span style="font-weight:400;font-size:0.6em;display:block;opacity:0.7;">' + opt.sub + '</span>';
+      btn.addEventListener('click', function(n){
+        return function(){ showNameFields(n); };
+      }(opt.n));
+      playerCountBtns.appendChild(btn);
+    }
+  }
+
+  function showNameFields(n){
+    numPlayers = n;
+    twoPlayer = (n > 1);
+    playerCountBtns.style.display = 'none';
+    playerNamesForm.style.display = 'flex';
+    playerNameFields.innerHTML = '';
+
+    var defaults = ['Player 1','Player 2','Player 3','Player 4','Player 5'];
+    // Pre-fill Player 1 from the main name input
+    var p1val = playerNameInput.value.trim();
+
+    for (var i = 0; i < n; i++){
+      var wrap = document.createElement('div');
+      wrap.style.cssText = 'display:flex;flex-direction:column;gap:4px;';
+      var lbl = document.createElement('label');
+      lbl.style.cssText = 'font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--gold);opacity:0.8;';
+      lbl.textContent = defaults[i] + "'s Name";
+      var inp = document.createElement('input');
+      inp.type = 'text';
+      inp.maxLength = 20;
+      inp.placeholder = defaults[i];
+      inp.value = (i === 0 && p1val) ? p1val : '';
+      inp.style.cssText = 'width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(216,178,86,0.28);background:rgba(255,255,255,0.07);color:var(--gold-bright);font-size:16px;font-family:Outfit,sans-serif;outline:none;box-sizing:border-box;';
+      wrap.appendChild(lbl);
+      wrap.appendChild(inp);
+      playerNameFields.appendChild(wrap);
+    }
+  }
+
+  startWithNamesBtn.addEventListener('click', function(){
+    var inputs = playerNameFields.querySelectorAll('input');
+    playerNames = [];
+    for (var i = 0; i < inputs.length; i++){
+      var v = inputs[i].value.trim();
+      playerNames.push(v.length > 0 ? v : 'Player ' + (i + 1));
+    }
+    playerName = playerNames[0];
+    // Reset display for next time
+    playerCountBtns.style.display = 'flex';
+    playerNamesForm.style.display = 'none';
+    applyMode();
+    startGame();
+  });
+
   for (var gcb = 0; gcb < gameChoiceBtns.length; gcb++){
     gameChoiceBtns[gcb].addEventListener('click', function(e){
+      var typed = playerNameInput.value.trim();
+      playerName = typed.length > 0 ? typed : 'Player 1';
+      playerNames = [playerName];
       gameMode = e.currentTarget.getAttribute('data-game');
       gameStep.style.display = 'none';
       deckStep.style.display = 'block';
@@ -2085,17 +2345,17 @@
   for (var dcb = 0; dcb < deckChoiceBtns.length; dcb++){
     deckChoiceBtns[dcb].addEventListener('click', function(e){
       deckType = e.currentTarget.getAttribute('data-deck');
-      var deckName = deckType === 'wild' ? 'Wild Twists' : 'Bicycle';
       deckStep.style.display = 'none';
       if (gameMode === 'memory'){
         memorySizeStep.style.display = 'block';
       } else if (gameMode === 'solitaire'){
         twoPlayer = false;
+        numPlayers = 1;
+        playerNames = [playerName];
         applyMode();
         startGame();
       } else {
-        var gameName = gameMode === 'gofish' ? 'Go Fish' : 'War';
-        playersTitle.textContent = gameName + ' \u2014 ' + deckName;
+        buildPlayerCountBtns();
         playersStep.style.display = 'block';
       }
     });
@@ -2105,9 +2365,8 @@
     memSizeBtns[msb].addEventListener('click', function(e){
       memPairCount = parseInt(e.currentTarget.getAttribute('data-pairs'), 10);
       memorySizeStep.style.display = 'none';
-      twoPlayer = false;
-      applyMode();
-      startGame();
+      buildPlayerCountBtns();
+      playersStep.style.display = 'block';
     });
   }
 
@@ -2118,19 +2377,13 @@
 
   backToDeckBtn.addEventListener('click', function(){
     playersStep.style.display = 'none';
-    deckStep.style.display = 'block';
-  });
-
-  onePlayerBtn.addEventListener('click', function(){
-    twoPlayer = false;
-    applyMode();
-    startGame();
-  });
-
-  twoPlayerBtn.addEventListener('click', function(){
-    twoPlayer = true;
-    applyMode();
-    startGame();
+    playerCountBtns.style.display = 'flex';
+    playerNamesForm.style.display = 'none';
+    if (gameMode === 'memory'){
+      memorySizeStep.style.display = 'block';
+    } else {
+      deckStep.style.display = 'block';
+    }
   });
 
   newGameBtn.addEventListener('click', function(){
@@ -2138,6 +2391,8 @@
     deckStep.style.display = 'none';
     memorySizeStep.style.display = 'none';
     playersStep.style.display = 'none';
+    playerCountBtns.style.display = 'flex';
+    playerNamesForm.style.display = 'none';
     startScreen.classList.add('show');
   });
   overlayBtn.addEventListener('click', startGame);
